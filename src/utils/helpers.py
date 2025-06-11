@@ -270,3 +270,42 @@ def get_date_range(df: pd.DataFrame, date_column: str = 'Tiempo') -> Dict[str, A
         'duration_days': (dates.max() - dates.min()).days,
         'unique_dates': dates.dt.date.nunique()
     }
+
+
+def check_duplicate_columns(df: pd.DataFrame) -> Dict[str, List[str]]:
+    """
+    Check for duplicate columns in DataFrame.
+    
+    Args:
+        df: Input DataFrame
+        
+    Returns:
+        Dictionary with duplicate column information
+    """
+    duplicates = df.columns[df.columns.duplicated()].tolist()
+    
+    # Group duplicates
+    duplicate_groups = {}
+    for col in set(duplicates):
+        duplicate_groups[col] = [i for i, x in enumerate(df.columns) if x == col]
+    
+    return {
+        'has_duplicates': len(duplicates) > 0,
+        'n_duplicates': len(duplicates),
+        'duplicate_columns': list(set(duplicates)),
+        'duplicate_groups': duplicate_groups
+    }
+
+
+def remove_duplicate_columns(df: pd.DataFrame, keep: str = 'first') -> pd.DataFrame:
+    """
+    Remove duplicate columns from DataFrame.
+    
+    Args:
+        df: Input DataFrame
+        keep: Which duplicate to keep ('first', 'last')
+        
+    Returns:
+        DataFrame without duplicate columns
+    """
+    return df.loc[:, ~df.columns.duplicated(keep=keep)]

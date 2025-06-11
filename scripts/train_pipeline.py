@@ -227,7 +227,8 @@ def main():
     
     # Run pipeline
     pipeline = FuelTheftPipeline(config)
-    results = pipeline.run(data_path=args.data_path)
+    results = pipeline.run(data_path='data/raw/')
+    # results = pipeline.run(data_path=args.data_path)
     
     # Print summary
     print("\n" + "=" * 60)

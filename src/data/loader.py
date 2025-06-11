@@ -118,7 +118,19 @@ class DataLoader:
             
             # Apply column mappings
             df.rename(columns=self.config.data.column_mappings, inplace=True)
-            
+
+            if hasattr(self.config.data, 'missing_indicators') and self.config.data.missing_indicators:
+                logger.debug(
+                    f"In {file_path}: Applying replacement of missing_indicators: {self.config.data.missing_indicators}"
+                )
+                for indicator in self.config.data.missing_indicators:
+                    if pd.isna(indicator): # Avoid issues if NaN is somehow in indicators
+                        continue
+                    
+                    mask = df == indicator
+                    df = df.mask(mask, np.nan)
+                    # df = df.replace(indicator, np.nan) # Reassign df to apply changes
+
             # Initial datetime conversion
             if 'Tiempo' in df.columns:
                 df['Tiempo'] = pd.to_datetime(df['Tiempo'], errors='coerce')
@@ -133,21 +145,23 @@ class DataLoader:
             # Convert designated numeric columns to numeric, coercing errors.
             # This handles non-numeric strings (e.g., '-----') by converting them to NaN,
             # making them Parquet-compatible.
-            if hasattr(self.config.data, 'numeric_columns') and self.config.data.numeric_columns:
-                for col_name in self.config.data.numeric_columns:
-                    if col_name in df.columns:
-                        # Process only if it's an object type, as pd.to_numeric is idempotent on numeric types
-                        if df[col_name].dtype == 'object':
-                            # Identify values that are not NaN but will become NaN after coercion
-                            # This helps in logging only newly coerced NaNs from strings.
-                            problematic_values_mask = df[col_name].notna() & pd.to_numeric(df[col_name], errors='coerce').isna()
-                            num_coerced = problematic_values_mask.sum()
-                            if num_coerced > 0:
-                                logger.warning(
-                                    f"In {file_path}, '{col_name}' column: "
-                                    f"{num_coerced} non-numeric values (e.g., '-----') converted to NaN."
-                                )
-                            df[col_name] = pd.to_numeric(df[col_name], errors='coerce')
+            # if hasattr(self.config.data, 'numeric_columns') and self.config.data.numeric_columns:
+            #     for col_name in self.config.data.numeric_columns:
+            #         if col_name in df.columns:
+            #             # Process only if it's an object type, as pd.to_numeric is idempotent on numeric types
+            #             if df[col_name].dtype == 'object':
+            #                 # Identify values that are not NaN but will become NaN after coercion
+            #                 # This helps in logging only newly coerced NaNs from strings.
+            #                 problematic_values_mask = df[col_name].notna() & pd.to_numeric(df[col_name], errors='coerce').isna()
+            #                 num_coerced = problematic_values_mask.sum()
+            #                 if num_coerced > 0:
+            #                     logger.warning(
+            #                         f"In {file_path}, '{col_name}' column: "
+            #                         f"{num_coerced} non-numeric values (e.g., '-----') converted to NaN."
+            #                     )
+            #                 df[col_name] = pd.to_numeric(df[col_name], errors='coerce')
+
+
             return df
             
         except Exception as e:

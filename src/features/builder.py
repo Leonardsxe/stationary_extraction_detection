@@ -55,6 +55,12 @@ class FeatureBuilder:
         # Create a copy to avoid modifying original
         df_features = df.copy()
         
+        # Check for duplicate columns in input
+        if df_features.columns.duplicated().any():
+            n_duplicates = df_features.columns.duplicated().sum()
+            logger.warning(f"Input data has {n_duplicates} duplicate columns. Removing duplicates...")
+            df_features = df_features.loc[:, ~df_features.columns.duplicated(keep='first')]
+        
         # Track original columns
         original_columns = set(df_features.columns)
         
@@ -66,16 +72,31 @@ class FeatureBuilder:
                 engineer = self.feature_engineers[feature_set]
                 df_features = engineer.create_features(df_features)
                 
+                # Check for duplicates after each step
+                if df_features.columns.duplicated().any():
+                    n_duplicates = df_features.columns.duplicated().sum()
+                    duplicate_cols = df_features.columns[df_features.columns.duplicated()].tolist()
+                    logger.warning(f"Feature engineering step '{feature_set}' created {n_duplicates} duplicate columns: {duplicate_cols}")
+                    
+                    # Remove duplicates, keeping the first occurrence
+                    df_features = df_features.loc[:, ~df_features.columns.duplicated(keep='first')]
+                
                 # Track new features
                 new_features = set(df_features.columns) - original_columns
-                self.feature_metadata[feature_set] = list(new_features)
+                self.feature_metadata[feature_set] = list(new_features - set(sum(self.feature_metadata.values(), [])))
                 
-                logger.info(f"Created {len(new_features)} {feature_set} features")
+                logger.info(f"Created {len(self.feature_metadata[feature_set])} {feature_set} features")
             else:
                 logger.warning(f"Unknown feature set: {feature_set}")
         
         # Create anomaly scores
         df_features = self._create_anomaly_scores(df_features)
+        
+        # Final duplicate check
+        if df_features.columns.duplicated().any():
+            n_duplicates = df_features.columns.duplicated().sum()
+            logger.warning(f"Final dataframe has {n_duplicates} duplicate columns. Removing...")
+            df_features = df_features.loc[:, ~df_features.columns.duplicated(keep='first')]
         
         # Log feature summary
         total_features = len(df_features.columns) - len(original_columns)
@@ -215,12 +236,23 @@ class FeatureBuilder:
         for features in self.feature_metadata.values():
             all_features.extend(features)
         
+        # Remove duplicates from feature list
+        all_features = list(dict.fromkeys(all_features))  # Preserves order
+        
         # Filter to existing columns
         existing_features = [f for f in all_features if f in df.columns]
         
         if not existing_features:
             logger.warning("No engineered features found in dataframe")
             return pd.DataFrame()
+        
+        # Handle duplicate columns in dataframe
+        if df.columns.duplicated().any():
+            logger.warning(f"Found {df.columns.duplicated().sum()} duplicate columns. Removing duplicates...")
+            df = df.loc[:, ~df.columns.duplicated(keep='first')]
+        
+        # Ensure features are still in dataframe after duplicate removal
+        existing_features = [f for f in existing_features if f in df.columns]
         
         # Calculate statistics
         stats = df[existing_features].describe().T

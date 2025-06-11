@@ -80,14 +80,28 @@ class BehavioralFeatureEngineer:
                 for col, agg in self.driver_stats.columns
             ]
             
+            # Check if columns already exist before merging
+            existing_driver_cols = [col for col in self.driver_stats.columns if col in df.columns]
+            if existing_driver_cols:
+                logger.warning(f"Found {len(existing_driver_cols)} existing driver columns. Skipping: {existing_driver_cols}")
+                # Remove existing columns from driver_stats
+                self.driver_stats = self.driver_stats.drop(columns=existing_driver_cols)
+            
             # Merge back to main dataframe
-            for col in self.driver_stats.columns:
+            if not self.driver_stats.empty:
                 df = df.merge(
-                    self.driver_stats[[col]],
+                    self.driver_stats,
                     left_on='Driver',
                     right_index=True,
-                    how='left'
+                    how='left',
+                    suffixes=('', '_dup')  # Add suffix to handle any remaining duplicates
                 )
+                
+                # Remove any columns with _dup suffix
+                dup_cols = [col for col in df.columns if col.endswith('_dup')]
+                if dup_cols:
+                    logger.warning(f"Removing {len(dup_cols)} duplicate columns created during merge")
+                    df = df.drop(columns=dup_cols)
             
             # Calculate deviations from driver baseline
             if 'Fuel_Diff' in df.columns and 'Driver_Fuel_Diff_mean' in df.columns:
@@ -166,14 +180,28 @@ class BehavioralFeatureEngineer:
                 for col, agg in vehicle_stats.columns
             ]
             
+            # Check if columns already exist before merging
+            existing_vehicle_cols = [col for col in vehicle_stats.columns if col in df.columns]
+            if existing_vehicle_cols:
+                logger.warning(f"Found {len(existing_vehicle_cols)} existing vehicle columns. Skipping: {existing_vehicle_cols}")
+                # Remove existing columns from vehicle_stats
+                vehicle_stats = vehicle_stats.drop(columns=existing_vehicle_cols)
+            
             # Merge back to main dataframe
-            for col in vehicle_stats.columns:
+            if not vehicle_stats.empty:
                 df = df.merge(
-                    vehicle_stats[[col]],
+                    vehicle_stats,
                     left_on='Vehicle_ID',
                     right_index=True,
-                    how='left'
+                    how='left',
+                    suffixes=('', '_dup')  # Add suffix to handle any remaining duplicates
                 )
+                
+                # Remove any columns with _dup suffix
+                dup_cols = [col for col in df.columns if col.endswith('_dup')]
+                if dup_cols:
+                    logger.warning(f"Removing {len(dup_cols)} duplicate columns created during merge")
+                    df = df.drop(columns=dup_cols)
         
         return df
     

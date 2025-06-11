@@ -156,7 +156,7 @@ class TemporalFeatureEngineer:
             logger.warning("Required columns for stationary duration not found")
             return df
         
-        df['Stationary_Duration'] = 0
+        df['Stationary_Duration'] = 0.0
         
         if 'Vehicle_ID' in df.columns:
             for vehicle in df['Vehicle_ID'].unique():
@@ -172,7 +172,7 @@ class TemporalFeatureEngineer:
                 stationary_duration = vehicle_data.groupby(stationary_groups)['Time_Diff'].cumsum()
                 stationary_duration = stationary_duration * vehicle_data['Is_Stationary']
                 
-                df.loc[mask, 'Stationary_Duration'] = stationary_duration
+                df.loc[mask, 'Stationary_Duration'] = stationary_duration.astype(float)
         
         return df
     
@@ -184,8 +184,8 @@ class TemporalFeatureEngineer:
         # Identify refuel events
         df['Is_Refuel'] = (df['Fuel_Diff'] > self.config.features.refuel_threshold).astype(int)
         
-        # Calculate time since refuel
-        df['Time_Since_Refuel'] = 0
+        # Initialize with float type to handle potential NaN/float values
+        df['Time_Since_Refuel'] = 0.0
         
         if 'Vehicle_ID' in df.columns:
             for vehicle in df['Vehicle_ID'].unique():
@@ -197,15 +197,16 @@ class TemporalFeatureEngineer:
                 
                 for idx, row in vehicle_data.iterrows():
                     if pd.isna(last_refuel_time):
-                        time_since_refuel.append(0)
+                        time_since_refuel.append(0.0)
                     else:
                         hours_diff = (row['Tiempo'] - last_refuel_time).total_seconds() / 3600
-                        time_since_refuel.append(hours_diff)
+                        time_since_refuel.append(float(hours_diff))
                     
                     if row['Is_Refuel']:
                         last_refuel_time = row['Tiempo']
                 
-                df.loc[mask, 'Time_Since_Refuel'] = time_since_refuel
+                # Ensure the list contains float values before assignment
+                df.loc[mask, 'Time_Since_Refuel'] = pd.Series(time_since_refuel, dtype=float).values
         
         # Create sudden drop indicator
         df['Is_Sudden_Drop'] = (
