@@ -254,6 +254,10 @@ class FeatureBuilder:
         # Ensure features are still in dataframe after duplicate removal
         existing_features = [f for f in existing_features if f in df.columns]
         
+        if not existing_features: # Re-check after potential column removal
+            logger.warning("No engineered features found in dataframe after duplicate column removal for statistics.")
+            return pd.DataFrame()
+            
         # Calculate statistics
         stats = df[existing_features].describe().T
         
@@ -261,7 +265,9 @@ class FeatureBuilder:
         stats['missing_count'] = df[existing_features].isna().sum()
         stats['missing_pct'] = stats['missing_count'] / len(df) * 100
         stats['unique_count'] = df[existing_features].nunique()
-        stats['skewness'] = df[existing_features].skew()
-        stats['kurtosis'] = df[existing_features].kurtosis()
+        
+        numeric_features_for_stats = df[existing_features].select_dtypes(include=np.number).columns
+        stats['skewness'] = df[numeric_features_for_stats].skew()
+        stats['kurtosis'] = df[numeric_features_for_stats].kurtosis()
         
         return stats.round(3)
