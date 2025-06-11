@@ -128,12 +128,12 @@ Modify `src/config/config.py` to adjust:
 Input data should be Excel files with the following columns:
 
 - `Tiempo`: Timestamp
-- `Tanque Total`: Fuel level (liters)
+- `Tanque Total`: Fuel level (gallons)
 - `Velocidad`: Vehicle speed
-- `Driver`: Driver identifier
+- `Driver`: Driver identifier (Driver name)
 - `Ubicación`: Location
 - `Coordenadas`: GPS coordinates
-- `Stationary_drain`: Theft label (if available)
+- `Stationary_drain`: Theft label (if available, manual labeling performed by Sergio Martinez and Leonardo Lozada)
 
 ## Key Components
 
@@ -151,4 +151,3 @@ The system creates three types of features:
 2. **Behavioral Features**:
    - Driver-specific baselines
    - Location risk scores
-   -
