@@ -69,10 +69,20 @@ class EnsembleModel:
             'aggressive': 0.4     # Catch more potential thefts
         }
         
+        # Create all prediction columns at once to avoid fragmentation
+        prediction_columns = {}
+        for name, threshold in thresholds.items():
+            col_name = f'Prediction_{name}'
+            prediction_columns[col_name] = (data['Final_Score'] > threshold).astype(int)
+        
+        # Add all columns at once
+        for col_name, values in prediction_columns.items():
+            data[col_name] = values
+        
+        # Track predictions info
         predictions = {}
         for name, threshold in thresholds.items():
             col_name = f'Prediction_{name}'
-            data[col_name] = (data['Final_Score'] > threshold).astype(int)
             predictions[name] = {
                 'threshold': threshold,
                 'n_predictions': data[col_name].sum(),
@@ -80,7 +90,7 @@ class EnsembleModel:
             }
         
         # Use balanced as default
-        data['Final_Prediction'] = data['Prediction_balanced']
+        data['Final_Prediction'] = data['Prediction_balanced'].copy()
         
         # Analyze high-risk events
         high_risk = data[data['Final_Score'] > 0.8].copy()
@@ -88,23 +98,30 @@ class EnsembleModel:
         # Group by driver if available
         driver_risk = {}
         if 'Driver' in data.columns and len(high_risk) > 0:
-            driver_risk = high_risk.groupby('Driver').agg({
+            driver_agg = high_risk.groupby('Driver').agg({
                 'Final_Score': ['count', 'mean'],
                 'Final_Prediction': 'sum'
-            }).to_dict()
+            })
+            # Flatten column names to avoid tuple keys
+            driver_agg.columns = ['_'.join(col).strip() for col in driver_agg.columns]
+            driver_risk = driver_agg.to_dict(orient='index')
         
         # Location risk
         location_risk = {}
         if 'Ubicación' in data.columns and len(high_risk) > 0:
-            location_risk = high_risk.groupby('Ubicación').agg({
+            location_agg = high_risk.groupby('Ubicación').agg({
                 'Final_Score': ['count', 'mean'],
                 'Final_Prediction': 'sum'
-            }).to_dict()
+            })
+            # Flatten column names to avoid tuple keys
+            location_agg.columns = ['_'.join(col).strip() for col in location_agg.columns]
+            location_risk = location_agg.to_dict(orient='index')
         
         # Time patterns
         time_risk = {}
         if 'Hour' in data.columns and len(high_risk) > 0:
-            time_risk = high_risk.groupby('Hour')['Final_Score'].agg(['count', 'mean']).to_dict()
+            time_agg = high_risk.groupby('Hour')['Final_Score'].agg(['count', 'mean'])
+            time_risk = time_agg.to_dict(orient='index')
         
         results = {
             'weights_used': weights_used,

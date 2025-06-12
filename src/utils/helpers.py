@@ -118,10 +118,49 @@ def save_json(data: Dict, filepath: Union[str, Path], indent: int = 2) -> Path:
     filepath = Path(filepath)
     filepath.parent.mkdir(parents=True, exist_ok=True)
     
+    # Convert all keys to strings for JSON compatibility
+    data_to_save = _convert_for_json(data)
+    
     with open(filepath, 'w') as f:
-        json.dump(data, f, indent=indent, default=str)
+        json.dump(data_to_save, f, indent=indent, default=str)
     
     return filepath
+
+
+def _convert_for_json(obj: Any) -> Any:
+    """
+    Recursively convert an object to be JSON-serializable.
+    
+    Args:
+        obj: Object to convert
+        
+    Returns:
+        JSON-serializable object
+    """
+    if isinstance(obj, dict):
+        # Convert dict keys to strings and recursively process values
+        return {str(k): _convert_for_json(v) for k, v in obj.items()}
+    elif isinstance(obj, (list, tuple)):
+        # Recursively process list/tuple elements
+        return [_convert_for_json(elem) for elem in obj]
+    elif isinstance(obj, np.ndarray):
+        # Convert numpy arrays to lists
+        return obj.tolist()
+    elif isinstance(obj, pd.Series):
+        # Convert pandas Series to dict
+        return obj.to_dict()
+    elif isinstance(obj, pd.DataFrame):
+        # Convert pandas DataFrame to dict
+        return obj.to_dict(orient='records')
+    elif isinstance(obj, (np.integer, np.floating)):
+        # Convert numpy types to Python types
+        return obj.item()
+    elif hasattr(obj, '__dict__'):
+        # Convert objects with __dict__ to dict
+        return {str(k): _convert_for_json(v) for k, v in obj.__dict__.items()}
+    else:
+        # Return as-is for JSON-serializable types
+        return obj
 
 
 def load_json(filepath: Union[str, Path]) -> Dict:

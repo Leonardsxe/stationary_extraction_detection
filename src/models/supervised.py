@@ -176,7 +176,7 @@ class SupervisedModel:
             ),
             'XGBoost': xgb.XGBClassifier(
                 **self.config.model.xgb_params,
-                scale_pos_weight=(y_train == 0).sum() / (y_train == 1).sum()
+                scale_pos_weight=(y_train == 0).sum() / (y_train == 1).sum() if (y_train == 1).sum() > 0 else 1
             ),
             'LightGBM': lgb.LGBMClassifier(
                 n_estimators=100,
