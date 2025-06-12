@@ -132,15 +132,15 @@ class DataLoader:
                     # df = df.replace(indicator, np.nan) # Reassign df to apply changes
 
             # Initial datetime conversion
-            if 'Tiempo' in df.columns:
-                df['Tiempo'] = pd.to_datetime(df['Tiempo'], errors='coerce')
+            if 'timestamp' in df.columns:
+                df['timestamp'] = pd.to_datetime(df['timestamp'], errors='coerce')
                 
                 # Remove rows with invalid dates
-                invalid_dates_mask = df['Tiempo'].isna()
+                invalid_dates_mask = df['timestamp'].isna()
                 num_invalid_dates = invalid_dates_mask.sum()
                 if num_invalid_dates > 0:
-                    logger.warning(f"In {file_path}, 'Tiempo' column: Removing {num_invalid_dates} rows with invalid dates.")
-                    df = df.dropna(subset=['Tiempo'])
+                    logger.warning(f"In {file_path}, 'timestamp' column: Removing {num_invalid_dates} rows with invalid dates.")
+                    df = df.dropna(subset=['timestamp'])
             
             # Convert designated numeric columns to numeric, coercing errors.
             # This handles non-numeric strings (e.g., '-----') by converting them to NaN,
@@ -227,8 +227,8 @@ class DataLoader:
             'dtypes': self.data.dtypes.to_dict(),
             'memory_usage_mb': self.data.memory_usage(deep=True).sum() / 1024**2,
             'date_range': {
-                'start': self.data['Tiempo'].min() if 'Tiempo' in self.data else None,
-                'end': self.data['Tiempo'].max() if 'Tiempo' in self.data else None
+                'start': self.data['timestamp'].min() if 'timestamp' in self.data else None,
+                'end': self.data['timestamp'].max() if 'timestamp' in self.data else None
             }
         }
         

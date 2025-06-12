@@ -287,11 +287,15 @@ def flatten_dict(d: Dict[str, Any], parent_key: str = '', sep: str = '_') -> Dic
     return dict(items)
 
 
-def get_date_range(df: pd.DataFrame, date_column: str = 'Tiempo') -> Dict[str, Any]:
+def get_date_range(df: pd.DataFrame, date_column: str = 'timestamp'
+                   ) -> Dict[str, Any]:
     """
     Get date range information from DataFrame.
     
     Args:
+
+
+    
         df: Input DataFrame
         date_column: Name of date column
         

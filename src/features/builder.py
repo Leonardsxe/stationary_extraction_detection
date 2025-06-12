@@ -192,8 +192,8 @@ class FeatureBuilder:
         
         # Default columns to exclude
         default_exclude = [
-            'Vehicle_ID', 'Driver', 'Tiempo', 'Source_File', 
-            'Coordenadas', 'Ubicación', 'Latitude', 'Longitude'
+            'Vehicle_ID', 'driver_name', 'timestamp', 'Source_File', 
+            'coordinates', 'location', 'Latitude', 'Longitude'
         ]
         
         if exclude_columns:

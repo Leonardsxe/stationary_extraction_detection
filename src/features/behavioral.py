@@ -52,14 +52,14 @@ class BehavioralFeatureEngineer:
     
     def _create_driver_features(self, df: pd.DataFrame) -> pd.DataFrame:
         """Create driver-specific behavioral features."""
-        if 'Driver' not in df.columns:
-            logger.warning("'Driver' column not found, skipping driver features")
+        if 'driver_name' not in df.columns:
+            logger.warning("'driver_name' column not found, skipping driver features")
             return df
         
         # Calculate driver statistics
         driver_agg_features = {
             'Fuel_Diff': ['mean', 'std', 'min', 'max', lambda x: x.quantile(0.25)],
-            'Velocidad': ['mean', 'std', 'max'],
+            'speed_raw': ['mean', 'std', 'max'],
             'Stationary_Duration': ['mean', 'max'],
             'Is_NightTime': ['mean'],
             'Is_Stationary': ['mean']
@@ -72,7 +72,7 @@ class BehavioralFeatureEngineer:
         }
         
         if driver_agg_features:
-            self.driver_stats = df.groupby('Driver').agg(driver_agg_features)
+            self.driver_stats = df.groupby('driver_name').agg(driver_agg_features)
             
             # Flatten column names
             self.driver_stats.columns = [
@@ -91,7 +91,7 @@ class BehavioralFeatureEngineer:
             if not self.driver_stats.empty:
                 df = df.merge(
                     self.driver_stats,
-                    left_on='Driver',
+                    left_on='driver_name',
                     right_index=True,
                     how='left',
                     suffixes=('', '_dup')  # Add suffix to handle any remaining duplicates
@@ -109,39 +109,39 @@ class BehavioralFeatureEngineer:
                     df['Fuel_Diff'] - df['Driver_Fuel_Diff_mean']
                 ) / (df['Driver_Fuel_Diff_std'] + 1e-6)
             
-            if 'Velocidad' in df.columns and 'Driver_Velocidad_mean' in df.columns:
+            if 'speed_raw' in df.columns and 'Driver_Velocidad_mean' in df.columns:
                 df['Speed_Deviation_From_Driver'] = (
-                    df['Velocidad'] - df['Driver_Velocidad_mean']
+                    df['speed_raw'] - df['Driver_Velocidad_mean']
                 ) / (df['Driver_Velocidad_std'] + 1e-6)
         
         return df
     
     def _create_location_features(self, df: pd.DataFrame) -> pd.DataFrame:
         """Create location-based behavioral features."""
-        if 'Ubicación' not in df.columns:
-            logger.warning("'Ubicación' column not found, skipping location features")
+        if 'location' not in df.columns:
+            logger.warning("'location' column not found, skipping location features")
             return df
         
         # Calculate location frequency
-        location_freq = df['Ubicación'].value_counts()
+        location_freq = df['location'].value_counts()
         total_locations = len(df)
         
         # Create location risk score (inverse of frequency)
         location_risk = 1 - (location_freq / location_freq.max())
-        df['Location_Risk_Score'] = df['Ubicación'].map(location_risk).fillna(1)
+        df['Location_Risk_Score'] = df['location'].map(location_risk).fillna(1)
         
         # Location frequency percentage
         location_freq_pct = location_freq / total_locations
-        df['Location_Frequency'] = df['Ubicación'].map(location_freq_pct).fillna(0)
+        df['Location_Frequency'] = df['location'].map(location_freq_pct).fillna(0)
         
         # Is rare location (bottom 10%)
         rare_threshold = location_freq.quantile(0.1)
         rare_locations = location_freq[location_freq <= rare_threshold].index
-        df['Is_Rare_Location'] = df['Ubicación'].isin(rare_locations).astype(int)
+        df['Is_Rare_Location'] = df['location'].isin(rare_locations).astype(int)
         
         # Location-based statistics
         if any(col in df.columns for col in ['Fuel_Diff', 'Is_Stationary']):
-            location_stats = df.groupby('Ubicación').agg({
+            location_stats = df.groupby('location').agg({
                 col: ['mean', 'std'] for col in ['Fuel_Diff', 'Is_Stationary'] 
                 if col in df.columns
             })
@@ -159,7 +159,7 @@ class BehavioralFeatureEngineer:
         
         # Vehicle usage patterns
         vehicle_agg_features = {
-            'Tanque Total': ['mean', 'std'],
+            'total_fuel': ['mean', 'std'],
             'Fuel_Diff': ['mean', 'std'],
             'Is_NightTime': ['mean'],
             'Is_Stationary': ['mean']
@@ -208,9 +208,9 @@ class BehavioralFeatureEngineer:
     def _create_unusual_behavior_indicators(self, df: pd.DataFrame) -> pd.DataFrame:
         """Create indicators for unusual behavior."""
         # Unusual speed (deviation > 2 std)
-        if all(col in df.columns for col in ['Velocidad', 'Driver_Velocidad_mean', 'Driver_Velocidad_std']):
+        if all(col in df.columns for col in ['speed_raw', 'Driver_Velocidad_mean', 'Driver_Velocidad_std']):
             df['Is_Unusual_Speed'] = (
-                np.abs(df['Velocidad'] - df['Driver_Velocidad_mean']) > 
+                np.abs(df['speed_raw'] - df['Driver_Velocidad_mean']) > 
                 2 * df['Driver_Velocidad_std']
             ).astype(int)
         

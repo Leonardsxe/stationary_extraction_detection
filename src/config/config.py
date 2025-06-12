@@ -16,13 +16,25 @@ class DataConfig:
     
     # Column mappings
     column_mappings: Dict[str, str] = field(default_factory=lambda: {
-        'Tanque total': 'Tanque Total',
-        'Tiempo': 'Tiempo'
+        'Tanque total': 'total_fuel',
+        'Tanque Total': 'total_fuel',
+        'Calidad de señal': 'quality_signal',
+        'Tanque Izquierdo': 'left_tank',
+        'Batería interna': 'internal_battery',
+        'Batería vehículo': 'vehicle_battery',
+        'Tanque Derecho': 'right_tank',
+        'Ubicación': 'location',
+        'Coordenadas': 'coordinates',
+        'Tiempo': 'timestamp',
+        'Velocidad': 'speed_raw',
+        'Altitud': 'altitude',
+        'Driver': 'driver_name', 
+        'Ignición': 'ignition_raw'
     })
     
     # Data types
     numeric_columns: List[str] = field(default_factory=lambda: [
-        'Network Jamming', 'GNSS Jamming', 'Tanque Total', 'Velocidad'
+        'Network Jamming', 'GNSS Jamming', 'total_fuel', 'speed_raw'
     ])
     
     # Missing value indicators
@@ -36,9 +48,9 @@ class FeatureConfig:
     night_hours: tuple = (22, 5)  # 10 PM to 5 AM
     
     # Threshold values
-    refuel_threshold: float = 10.0  # Liters
-    stationary_loss_threshold: float = 5.0  # Liters
-    rapid_loss_rate: float = -0.5  # L/min
+    refuel_threshold: float = 15.0  # Gallons
+    stationary_loss_threshold: float = 2.5  # Gallons
+    rapid_loss_rate: float = -0.5  # Gal/min
     
     # Rolling window sizes
     rolling_windows: List[int] = field(default_factory=lambda: [5, 10, 30])

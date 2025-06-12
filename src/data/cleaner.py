@@ -67,15 +67,15 @@ class DataCleaner:
 
     def _apply_ignition_rule(self, df: pd.DataFrame) -> pd.DataFrame:
         """
-        Apply specific cleaning rule for 'Ignición' based on 'Velocidad'.
-        Rule: If 'Ignición' is NaN:
-              - Set to 0 if 'Velocidad' is NaN or 'Velocidad' == 0.
-              - Set to 1 if 'Velocidad' is not NaN and 'Velocidad' != 0.
+        Apply specific cleaning rule for 'ignition_raw' based on 'speed_raw'.
+        Rule: If 'ignition_raw' is NaN:
+              - Set to 0 if 'speed_raw' is NaN or 'speed_raw' == 0.
+              - Set to 1 if 'speed_raw' is not NaN and 'speed_raw' != 0.
         """
-        logger.debug("Applying 'Ignición' cleaning rule based on 'Velocidad'...")
+        logger.debug("Applying 'ignition_raw' cleaning rule based on 'speed_raw'...")
         
-        ignition_col = 'Ignición'
-        speed_col = 'Velocidad'
+        ignition_col = 'ignition_raw'
+        speed_col = 'speed_raw'
 
         if ignition_col not in df.columns:
             logger.warning(f"'{ignition_col}' column not found. Skipping ignition cleaning rule.")
@@ -95,17 +95,17 @@ class DataCleaner:
             logger.debug(f"No NaN values found in '{ignition_col}' to apply rule.")
             return df
 
-        # Condition: 'Velocidad' is NaN or 'Velocidad' == 0
+        # Condition: 'speed_raw' is NaN or 'speed_raw' == 0
         condition_set_ignition_to_0 = df[speed_col].isna() | (df[speed_col] == 0)
         df.loc[ignition_nan_mask & condition_set_ignition_to_0, ignition_col] = 0
         
-        # Condition: 'Velocidad' is not NaN AND 'Velocidad' != 0
+        # Condition: 'speed_raw' is not NaN AND 'speed_raw' != 0
         condition_set_ignition_to_1 = df[speed_col].notna() & (df[speed_col] != 0)
         df.loc[ignition_nan_mask & condition_set_ignition_to_1, ignition_col] = 1
         
         filled_count = num_ignition_nan_before - df[ignition_col].isna().sum()
         if filled_count > 0:
-            logger.info(f"Applied 'Ignición' rule: {filled_count} NaN values in '{ignition_col}' filled based on '{speed_col}'.")
+            logger.info(f"Applied 'ignition_raw' rule: {filled_count} NaN values in '{ignition_col}' filled based on '{speed_col}'.")
         return df
     
     def _handle_missing_indicators(self, df: pd.DataFrame) -> pd.DataFrame:
@@ -126,7 +126,7 @@ class DataCleaner:
         """Clean and validate datetime columns."""
         logger.debug("Cleaning datetime columns...")
         
-        datetime_columns = ['Tiempo']
+        datetime_columns = ['timestamp']
         
         for col in datetime_columns:
             if col in df.columns:
@@ -161,10 +161,10 @@ class DataCleaner:
         """Extract latitude and longitude from coordinates column."""
         logger.debug("Extracting coordinates...")
         
-        if 'Coordenadas' in df.columns:
+        if 'coordinates' in df.columns:
             try:
                 # Split coordinates
-                coord_split = df['Coordenadas'].str.split(',', expand=True)
+                coord_split = df['coordinates'].str.split(',', expand=True)
                 df['Latitude'] = pd.to_numeric(coord_split[0], errors='coerce')
                 df['Longitude'] = pd.to_numeric(coord_split[1], errors='coerce')
                 
@@ -184,7 +184,7 @@ class DataCleaner:
         logger.debug("Removing duplicates...")
         
         # Define columns that identify a unique record
-        subset_columns = ['Vehicle_ID', 'Tiempo', 'Tanque Total']
+        subset_columns = ['Vehicle_ID', 'timestamp', 'total_fuel']
         subset_columns = [col for col in subset_columns if col in df.columns]
         
         if subset_columns:
@@ -201,8 +201,8 @@ class DataCleaner:
         
         # Define outlier thresholds
         outlier_rules = {
-            'Velocidad': (0, 200),  # km/h
-            'Tanque Total': (0, 1000),  # Liters
+            'speed_raw': (0, 200),  # km/h
+            'total_fuel': (0, 400),  # Gallons
         }
         
         for col, (min_val, max_val) in outlier_rules.items():
@@ -211,10 +211,10 @@ class DataCleaner:
                 if outliers.any():
                     logger.warning(f"Column '{col}': {outliers.sum()} outliers outside range [{min_val}, {max_val}]")
                     # Option 1: Remove outliers
-                    # df = df[~outliers]
+                    df = df[~outliers]
                     # Option 2: Cap outliers
-                    df.loc[df[col] < min_val, col] = min_val
-                    df.loc[df[col] > max_val, col] = max_val
+                    # df.loc[df[col] < min_val, col] = min_val
+                    # df.loc[df[col] > max_val, col] = max_val
         
         return df
     
@@ -238,8 +238,8 @@ class DataCleaner:
             columns = df.select_dtypes(include=[np.number]).columns.tolist()
         
         # Sort by vehicle and time for proper interpolation
-        if all(col in df.columns for col in ['Vehicle_ID', 'Tiempo']):
-            df = df.sort_values(['Vehicle_ID', 'Tiempo'])
+        if all(col in df.columns for col in ['Vehicle_ID', 'timestamp']):
+            df = df.sort_values(['Vehicle_ID', 'timestamp'])
         
         for col in columns:
             if col in df.columns:
@@ -277,7 +277,7 @@ class DataCleaner:
         issues = []
         
         # Check for required columns
-        required_columns = ['Vehicle_ID', 'Tiempo', 'Tanque Total']
+        required_columns = ['Vehicle_ID', 'timestamp', 'total_fuel']
         missing_columns = [col for col in required_columns if col not in df.columns]
         if missing_columns:
             issues.append(f"Missing required columns: {missing_columns}")
@@ -292,12 +292,12 @@ class DataCleaner:
             issues.append(f"Columns with all null values: {null_columns}")
         
         # Check datetime consistency
-        if 'Tiempo' in df.columns:
-            if df['Tiempo'].isna().any():
+        if 'timestamp' in df.columns:
+            if df['timestamp'].isna().any():
                 issues.append("Null values found in Tiempo column")
             else:
                 # Check for time travel (records going backwards in time)
-                time_diffs = df.groupby('Vehicle_ID')['Tiempo'].diff()
+                time_diffs = df.groupby('Vehicle_ID')['timestamp'].diff()
                 if (time_diffs < pd.Timedelta(0)).any():
                     issues.append("Negative time differences detected (time travel)")
         

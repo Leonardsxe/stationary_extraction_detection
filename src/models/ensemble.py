@@ -97,8 +97,8 @@ class EnsembleModel:
         
         # Group by driver if available
         driver_risk = {}
-        if 'Driver' in data.columns and len(high_risk) > 0:
-            driver_agg = high_risk.groupby('Driver').agg({
+        if 'driver_name' in data.columns and len(high_risk) > 0:
+            driver_agg = high_risk.groupby('driver_name').agg({
                 'Final_Score': ['count', 'mean'],
                 'Final_Prediction': 'sum'
             })
@@ -108,8 +108,8 @@ class EnsembleModel:
         
         # Location risk
         location_risk = {}
-        if 'Ubicación' in data.columns and len(high_risk) > 0:
-            location_agg = high_risk.groupby('Ubicación').agg({
+        if 'location' in data.columns and len(high_risk) > 0:
+            location_agg = high_risk.groupby('location').agg({
                 'Final_Score': ['count', 'mean'],
                 'Final_Prediction': 'sum'
             })
@@ -195,8 +195,8 @@ class EnsembleModel:
         
         # Select relevant columns for alert
         alert_columns = [
-            'Tiempo', 'Vehicle_ID', 'Driver', 'Ubicación',
-            'Tanque Total', 'Fuel_Diff', 'Final_Score',
+            'timestamp', 'Vehicle_ID', 'driver_name', 'location',
+            'total_fuel', 'Fuel_Diff', 'Final_Score',
             'Priority_Score', 'Priority'
         ]
         

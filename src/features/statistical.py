@@ -54,15 +54,15 @@ class StatisticalFeatureEngineer:
     
     def _create_rolling_features(self, df: pd.DataFrame) -> pd.DataFrame:
         """Create rolling window statistical features."""
-        if not all(col in df.columns for col in ['Vehicle_ID', 'Tanque Total']):
+        if not all(col in df.columns for col in ['Vehicle_ID', 'total_fuel']):
             logger.warning("Required columns for rolling features not found")
             return df
         
         # Sort by vehicle and time
-        if 'Tiempo' in df.columns:
-            df = df.sort_values(['Vehicle_ID', 'Tiempo'])
+        if 'timestamp' in df.columns:
+            df = df.sort_values(['Vehicle_ID', 'timestamp'])
         
-        rolling_columns = ['Tanque Total', 'Fuel_Diff', 'Fuel_Rate', 'Velocidad']
+        rolling_columns = ['total_fuel', 'Fuel_Diff', 'Fuel_Rate', 'speed_raw']
         rolling_columns = [col for col in rolling_columns if col in df.columns]
         
         for window in self.config.features.rolling_windows:
@@ -84,7 +84,7 @@ class StatisticalFeatureEngineer:
                 )
                 
                 # Rolling min/max for certain columns
-                if col in ['Tanque Total', 'Fuel_Diff']:
+                if col in ['total_fuel', 'Fuel_Diff']:
                     df[f'{col}_Rolling_Min_{window}'] = (
                         df.groupby('Vehicle_ID')[col]
                         .rolling(window=window, min_periods=1)
@@ -100,9 +100,9 @@ class StatisticalFeatureEngineer:
                     )
             
             # Exponential weighted moving average
-            if 'Tanque Total' in df.columns:
+            if 'total_fuel' in df.columns:
                 df[f'Fuel_EWMA_{window}'] = (
-                    df.groupby('Vehicle_ID')['Tanque Total']
+                    df.groupby('Vehicle_ID')['total_fuel']
                     .ewm(span=window, adjust=False)
                     .mean()
                     .reset_index(0, drop=True)
@@ -112,7 +112,7 @@ class StatisticalFeatureEngineer:
     
     def _create_lag_features(self, df: pd.DataFrame, lags: List[int] = [1, 2, 3]) -> pd.DataFrame:
         """Create lagged features."""
-        lag_columns = ['Tanque Total', 'Fuel_Diff', 'Velocidad']
+        lag_columns = ['total_fuel', 'Fuel_Diff', 'speed_raw']
         lag_columns = [col for col in lag_columns if col in df.columns]
         
         if 'Vehicle_ID' in df.columns:
@@ -129,7 +129,7 @@ class StatisticalFeatureEngineer:
     def _create_statistical_measures(self, df: pd.DataFrame) -> pd.DataFrame:
         """Create statistical measures for anomaly detection."""
         # Fuel level range in recent window
-        if 'Tanque Total' in df.columns:
+        if 'total_fuel' in df.columns:
             for window in [10, 30]:
                 if f'Tanque Total_Rolling_Min_{window}' in df.columns:
                     df[f'Fuel_Range_{window}'] = (
@@ -138,7 +138,7 @@ class StatisticalFeatureEngineer:
                     )
         
         # Coefficient of variation
-        for col in ['Tanque Total', 'Fuel_Rate']:
+        for col in ['total_fuel', 'Fuel_Rate']:
             if col in df.columns:
                 for window in self.config.features.rolling_windows:
                     mean_col = f'{col}_Rolling_Mean_{window}'
@@ -149,22 +149,22 @@ class StatisticalFeatureEngineer:
                         )
         
         # Moving average convergence divergence (MACD) for fuel level
-        if 'Tanque Total' in df.columns:
+        if 'total_fuel' in df.columns:
             if 'Vehicle_ID' in df.columns:
-                ema_12 = df.groupby('Vehicle_ID')['Tanque Total'].ewm(span=12, adjust=False).mean()
-                ema_26 = df.groupby('Vehicle_ID')['Tanque Total'].ewm(span=26, adjust=False).mean()
+                ema_12 = df.groupby('Vehicle_ID')['total_fuel'].ewm(span=12, adjust=False).mean()
+                ema_26 = df.groupby('Vehicle_ID')['total_fuel'].ewm(span=26, adjust=False).mean()
                 df['Fuel_MACD'] = ema_12.reset_index(0, drop=True) - ema_26.reset_index(0, drop=True)
             else:
                 df['Fuel_MACD'] = (
-                    df['Tanque Total'].ewm(span=12, adjust=False).mean() -
-                    df['Tanque Total'].ewm(span=26, adjust=False).mean()
+                    df['total_fuel'].ewm(span=12, adjust=False).mean() -
+                    df['total_fuel'].ewm(span=26, adjust=False).mean()
                 )
         
         return df
     
     def _create_zscore_features(self, df: pd.DataFrame) -> pd.DataFrame:
         """Create z-score features for anomaly detection."""
-        zscore_columns = ['Tanque Total', 'Fuel_Diff', 'Fuel_Rate', 'Stationary_Duration']
+        zscore_columns = ['total_fuel', 'Fuel_Diff', 'Fuel_Rate', 'Stationary_Duration']
         zscore_columns = [col for col in zscore_columns if col in df.columns]
         
         for col in zscore_columns:
@@ -189,7 +189,7 @@ class StatisticalFeatureEngineer:
     
     def _create_change_point_features(self, df: pd.DataFrame) -> pd.DataFrame:
         """Detect significant changes in fuel patterns."""
-        if 'Tanque Total' not in df.columns:
+        if 'total_fuel' not in df.columns:
             return df
         
         # Fuel level change magnitude

@@ -35,8 +35,8 @@ class TemporalFeatureEngineer:
             DataFrame with temporal features
         """
         # Sort by vehicle and time
-        if all(col in df.columns for col in ['Vehicle_ID', 'Tiempo']):
-            df = df.sort_values(['Vehicle_ID', 'Tiempo'])
+        if all(col in df.columns for col in ['Vehicle_ID', 'timestamp']):
+            df = df.sort_values(['Vehicle_ID', 'timestamp'])
         
         # Basic time features
         df = self._create_time_features(df)
@@ -60,14 +60,14 @@ class TemporalFeatureEngineer:
     
     def _create_time_features(self, df: pd.DataFrame) -> pd.DataFrame:
         """Extract basic time features."""
-        if 'Tiempo' not in df.columns:
-            logger.warning("'Tiempo' column not found, skipping time features")
+        if 'timestamp' not in df.columns:
+            logger.warning("'timestamp' column not found, skipping time features")
             return df
         
-        df['Hour'] = df['Tiempo'].dt.hour
-        df['DayOfWeek'] = df['Tiempo'].dt.dayofweek
-        df['Day'] = df['Tiempo'].dt.day
-        df['Month'] = df['Tiempo'].dt.month
+        df['Hour'] = df['timestamp'].dt.hour
+        df['DayOfWeek'] = df['timestamp'].dt.dayofweek
+        df['Day'] = df['timestamp'].dt.day
+        df['Month'] = df['timestamp'].dt.month
         df['IsWeekend'] = df['DayOfWeek'].isin([5, 6]).astype(int)
         
         # Night time indicator
@@ -108,14 +108,14 @@ class TemporalFeatureEngineer:
     
     def _create_time_differences(self, df: pd.DataFrame) -> pd.DataFrame:
         """Create time difference features."""
-        if 'Tiempo' not in df.columns:
+        if 'timestamp' not in df.columns:
             return df
         
         # Time since previous record
         if 'Vehicle_ID' in df.columns:
-            df['Time_Diff'] = df.groupby('Vehicle_ID')['Tiempo'].diff().dt.total_seconds() / 60  # minutes
+            df['Time_Diff'] = df.groupby('Vehicle_ID')['timestamp'].diff().dt.total_seconds() / 60  # minutes
         else:
-            df['Time_Diff'] = df['Tiempo'].diff().dt.total_seconds() / 60
+            df['Time_Diff'] = df['timestamp'].diff().dt.total_seconds() / 60
         
         # Categories for time differences
         df['Time_Diff_Category'] = pd.cut(
@@ -128,14 +128,14 @@ class TemporalFeatureEngineer:
     
     def _create_fuel_temporal_features(self, df: pd.DataFrame) -> pd.DataFrame:
         """Create fuel-related temporal features."""
-        if 'Tanque Total' not in df.columns:
+        if 'total_fuel' not in df.columns:
             return df
         
         # Fuel differences
         if 'Vehicle_ID' in df.columns:
-            df['Fuel_Diff'] = df.groupby('Vehicle_ID')['Tanque Total'].diff()
+            df['Fuel_Diff'] = df.groupby('Vehicle_ID')['total_fuel'].diff()
         else:
-            df['Fuel_Diff'] = df['Tanque Total'].diff()
+            df['Fuel_Diff'] = df['total_fuel'].diff()
         
         # Fuel consumption rate
         if 'Time_Diff' in df.columns:
@@ -145,8 +145,8 @@ class TemporalFeatureEngineer:
             df['Fuel_Rate'] = df['Fuel_Rate'].fillna(0)
         
         # Movement indicator
-        if 'Velocidad' in df.columns:
-            df['Is_Stationary'] = (df['Velocidad'] == 0).astype(int)
+        if 'speed_raw' in df.columns:
+            df['Is_Stationary'] = (df['speed_raw'] == 0).astype(int)
         
         return df
     
@@ -199,11 +199,11 @@ class TemporalFeatureEngineer:
                     if pd.isna(last_refuel_time):
                         time_since_refuel.append(0.0)
                     else:
-                        hours_diff = (row['Tiempo'] - last_refuel_time).total_seconds() / 3600
+                        hours_diff = (row['timestamp'] - last_refuel_time).total_seconds() / 3600
                         time_since_refuel.append(float(hours_diff))
                     
                     if row['Is_Refuel']:
-                        last_refuel_time = row['Tiempo']
+                        last_refuel_time = row['timestamp']
                 
                 # Ensure the list contains float values before assignment
                 df.loc[mask, 'Time_Since_Refuel'] = pd.Series(time_since_refuel, dtype=float).values
