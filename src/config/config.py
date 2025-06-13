@@ -77,6 +77,14 @@ class ModelConfig:
     resampling_method: str = 'smote'
     
     # Model hyperparameters
+    logistic_params: Dict[str, Any] = field(default_factory=lambda: {
+        'class_weight': 'balanced',
+        'random_state': 42,
+        'max_iter': 2000, 
+        'solver': 'lbfgs'
+    })
+    
+    # Random Forest parameters
     rf_params: Dict[str, Any] = field(default_factory=lambda: {
         'n_estimators': 100,
         'class_weight': 'balanced',

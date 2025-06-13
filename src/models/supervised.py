@@ -1,9 +1,11 @@
 """
 Supervised learning models for fuel theft detection.
 """
+import datetime
+from pathlib import Path
 import pandas as pd
 import numpy as np
-from typing import Dict, List, Optional, Tuple, Any
+from typing import Dict, List, Optional, Tuple, Any, Union
 from sklearn.model_selection import train_test_split, cross_val_score, StratifiedKFold
 from sklearn.preprocessing import StandardScaler, RobustScaler
 from sklearn.metrics import (
@@ -23,7 +25,7 @@ import logging
 
 from ..config.config import Config
 from ..utils.logger import get_logger
-from ..utils.helpers import save_model
+from ..utils.helpers import save_json, save_model
 
 logger = get_logger(__name__)
 
@@ -61,6 +63,9 @@ class SupervisedModel:
             Dictionary with results
         """
         logger.info("Starting supervised learning...")
+        
+        # Store feature names for later use
+        self._feature_names = features
         
         # Prepare data
         X, y = self._prepare_data(data, features, target)
@@ -161,15 +166,14 @@ class SupervisedModel:
     def _train_models(self, X_train: np.ndarray, y_train: np.ndarray,
                      X_test: pd.DataFrame, y_test: pd.Series) -> Dict[str, Dict]:
         """Train multiple models."""
+        
         # Scale test data
         X_test_scaled = self.scaler.transform(X_test)
         
         # Define models
         models = {
             'Logistic Regression': LogisticRegression(
-                class_weight='balanced',
-                random_state=self.config.model.random_state,
-                max_iter=1000
+                **self.config.model.logistic_params
             ),
             'Random Forest': RandomForestClassifier(
                 **self.config.model.rf_params
@@ -313,8 +317,46 @@ class SupervisedModel:
             'model': self.best_model,
             'scaler': self.scaler,
             'model_name': self.best_model_name,
+            'feature_names': self.feature_names,  # Save feature names for prediction
             'config': self.config
         }
         
         save_model(model_data, filepath)
         logger.info(f"Saved best model to {filepath}")
+    
+    def save_all_models(self, output_dir: Union[str, Path]) -> None:
+        """Save all trained models to directory."""
+        output_dir = Path(output_dir)
+        output_dir.mkdir(parents=True, exist_ok=True)
+        
+        for name, model in self.models.items():
+            model_data = {
+                'model': model,
+                'scaler': self.scaler,
+                'model_name': name,
+                'feature_names': self.feature_names,
+                'config': self.config,
+                'metrics': self.results.get('model_results', {}).get(name, {})
+            }
+            
+            filename = f"{name.lower().replace(' ', '_')}.pkl"
+            filepath = output_dir / filename
+            save_model(model_data, filepath)
+            logger.info(f"Saved {name} to {filepath}")
+        
+        # Save metadata
+        metadata = {
+            'best_model': self.best_model_name,
+            'model_files': [f"{name.lower().replace(' ', '_')}.pkl" for name in self.models.keys()],
+            'feature_names': self.feature_names,
+            'training_date': datetime.now().isoformat(),
+            'results': self.results
+        }
+        
+        save_json(metadata, output_dir / 'model_metadata.json')
+        logger.info(f"Saved model metadata to {output_dir}")
+    
+    @property
+    def feature_names(self) -> List[str]:
+        """Get feature names used in training."""
+        return getattr(self, '_feature_names', [])

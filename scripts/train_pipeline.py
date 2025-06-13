@@ -157,6 +157,11 @@ class FuelTheftPipeline:
             
             results['supervised'] = supervised_results
             
+            # Save trained models
+            models_dir = self.experiment_dir / 'models'
+            supervised.save_all_models(models_dir)
+            supervised.save_best_model(models_dir / 'best_model.pkl')
+            
             # 6. Ensemble Model
             logger.info("\n" + "=" * 60)
             logger.info("PHASE 6: ENSEMBLE MODEL")
@@ -170,6 +175,15 @@ class FuelTheftPipeline:
             )
             
             results['ensemble'] = ensemble_results
+            
+            # Save final predictions
+            final_predictions = featured_data[['timestamp', 'Vehicle_ID', 'driver_name', 'location', 
+                                             'total_fuel', 'Fuel_Diff', 'Final_Score', 
+                                             'Final_Prediction']].copy()
+            save_dataframe(
+                final_predictions,
+                self.experiment_dir / 'predictions' / 'final_predictions.csv'
+            )
         
         # 7. Generate Reports
         logger.info("\n" + "=" * 60)
