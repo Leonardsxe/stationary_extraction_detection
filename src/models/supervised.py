@@ -1,11 +1,11 @@
 """
 Supervised learning models for fuel theft detection.
 """
-import datetime
-from pathlib import Path
 import pandas as pd
 import numpy as np
-from typing import Dict, List, Optional, Tuple, Any, Union
+import matplotlib.pyplot as plt
+import seaborn as sns
+
 from sklearn.model_selection import train_test_split, cross_val_score, StratifiedKFold
 from sklearn.preprocessing import StandardScaler, RobustScaler
 from sklearn.metrics import (
@@ -19,9 +19,12 @@ from imblearn.over_sampling import SMOTE
 from imblearn.under_sampling import RandomUnderSampler
 import xgboost as xgb
 import lightgbm as lgb
-import matplotlib.pyplot as plt
-import seaborn as sns
+
 import logging
+from datetime import datetime
+from pathlib import Path
+from typing import Dict, List, Optional, Tuple, Any, Union
+
 
 from ..config.config import Config
 from ..utils.logger import get_logger
