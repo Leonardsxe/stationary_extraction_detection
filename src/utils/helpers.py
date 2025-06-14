@@ -352,3 +352,211 @@ def remove_duplicate_columns(df: pd.DataFrame, keep: str = 'first') -> pd.DataFr
         DataFrame without duplicate columns
     """
     return df.loc[:, ~df.columns.duplicated(keep=keep)]
+
+def _convert_for_json(obj: Any, max_size: int = 1000) -> Any:
+    """
+    Recursively convert an object to be JSON-serializable with size limits.
+    
+    Args:
+        obj: Object to convert
+        max_size: Maximum size for arrays/dataframes before summarizing
+        
+    Returns:
+        JSON-serializable object
+    """
+    if isinstance(obj, dict):
+        # Convert dict keys to strings and recursively process values
+        return {str(k): _convert_for_json(v, max_size) for k, v in obj.items()}
+    elif isinstance(obj, (list, tuple)):
+        # Truncate long lists
+        if len(obj) > max_size:
+            return {
+                '_type': 'truncated_list',
+                'length': len(obj),
+                'sample': [_convert_for_json(elem, max_size) for elem in obj[:10]],
+                'message': f'List truncated - showing first 10 of {len(obj)} items'
+            }
+        return [_convert_for_json(elem, max_size) for elem in obj]
+    elif isinstance(obj, np.ndarray):
+        # Summarize large arrays
+        if obj.size > max_size:
+            return {
+                '_type': 'numpy_array_summary',
+                'shape': list(obj.shape),
+                'dtype': str(obj.dtype),
+                'size': int(obj.size),
+                'sample': obj.flatten()[:10].tolist(),
+                'stats': {
+                    'mean': float(obj.mean()) if obj.dtype.kind in 'biufc' else None,
+                    'std': float(obj.std()) if obj.dtype.kind in 'biufc' else None,
+                    'min': float(obj.min()) if obj.dtype.kind in 'biufc' else None,
+                    'max': float(obj.max()) if obj.dtype.kind in 'biufc' else None,
+                }
+            }
+        return obj.tolist()
+    elif isinstance(obj, pd.Series):
+        # Summarize large Series
+        if len(obj) > max_size:
+            return {
+                '_type': 'pandas_series_summary',
+                'length': len(obj),
+                'dtype': str(obj.dtype),
+                'name': obj.name,
+                'unique_values': int(obj.nunique()),
+                'sample': obj.head(10).to_dict(),
+                'stats': obj.describe().to_dict() if obj.dtype.kind in 'biufc' else None
+            }
+        return obj.to_dict()
+    elif isinstance(obj, pd.DataFrame):
+        # Summarize DataFrames
+        if len(obj) > max_size or obj.shape[1] > 50:
+            return {
+                '_type': 'pandas_dataframe_summary',
+                'shape': list(obj.shape),
+                'columns': list(obj.columns),
+                'dtypes': obj.dtypes.astype(str).to_dict(),
+                'memory_usage_mb': obj.memory_usage(deep=True).sum() / 1024**2,
+                'sample_rows': obj.head(10).to_dict('records'),
+                'numeric_stats': obj.describe().to_dict() if any(obj.dtypes.apply(lambda x: x.kind in 'biufc')) else None
+            }
+        return obj.to_dict(orient='records')
+    elif isinstance(obj, (np.integer, np.floating)):
+        # Convert numpy types to Python types
+        return obj.item()
+    elif hasattr(obj, '__dict__'):
+        # Don't convert model objects - just return their class name
+        if 'sklearn' in str(type(obj)) or 'Model' in str(type(obj)):
+            return {
+                '_type': 'model_object',
+                'class': str(type(obj)),
+                'module': str(type(obj).__module__)
+            }
+        # Convert other objects with __dict__ to dict
+        return {str(k): _convert_for_json(v, max_size) for k, v in obj.__dict__.items()}
+    else:
+        # Return as-is for JSON-serializable types
+        return obj
+
+
+def create_summary_dict(data: Any, max_items: int = 10) -> Any:
+    """
+    Create a summary version of data for JSON storage.
+    
+    Args:
+        data: Data to summarize
+        max_items: Maximum number of items to include in lists
+        
+    Returns:
+        Summarized version of data
+    """
+    if isinstance(data, pd.DataFrame):
+        return {
+            'shape': list(data.shape),
+            'columns': list(data.columns),
+            'dtypes': data.dtypes.astype(str).to_dict(),
+            'memory_usage_mb': data.memory_usage(deep=True).sum() / 1024**2,
+            'sample_rows': data.head(max_items).to_dict('records') if len(data) > 0 else []
+        }
+    elif isinstance(data, pd.Series):
+        return {
+            'length': len(data),
+            'dtype': str(data.dtype),
+            'unique_values': int(data.nunique()) if not data.empty else 0,
+            'sample_values': data.head(max_items).tolist() if len(data) > 0 else []
+        }
+    elif isinstance(data, np.ndarray):
+        return {
+            'shape': list(data.shape),
+            'dtype': str(data.dtype),
+            'size': data.size,
+            'sample_values': data.flatten()[:max_items].tolist() if data.size > 0 else []
+        }
+    elif isinstance(data, dict):
+        return {k: create_summary_dict(v, max_items) for k, v in data.items()}
+    elif isinstance(data, list):
+        if len(data) > max_items:
+            return {
+                'length': len(data),
+                'sample': [create_summary_dict(item, max_items) for item in data[:max_items]],
+                'truncated': True
+            }
+        return [create_summary_dict(item, max_items) for item in data]
+    else:
+        return data
+
+
+def summarize_model_results(results: Dict[str, Any], model_type: str) -> Dict[str, Any]:
+    """
+    Create summary of model results for JSON storage.
+    
+    Args:
+        results: Model results dictionary
+        model_type: Type of model ('unsupervised', 'supervised', 'ensemble')
+        
+    Returns:
+        Summarized results
+    """
+    if model_type == 'unsupervised':
+        summary = {
+            'models_used': list(results.get('models', {}).keys()) if 'models' in results else [],
+            'n_anomalies_detected': {},
+            'execution_time': results.get('execution_time', 0)
+        }
+        
+        # Summarize predictions
+        if 'predictions' in results:
+            for model, preds in results['predictions'].items():
+                if isinstance(preds, (pd.Series, np.ndarray)):
+                    n_anomalies = int((preds == -1).sum()) if hasattr(preds, 'sum') else 0
+                    summary['n_anomalies_detected'][model] = n_anomalies
+        
+        # Include metrics if available
+        if 'metrics' in results:
+            summary['metrics'] = results['metrics']
+            
+    elif model_type == 'supervised':
+        summary = {
+            'models_trained': list(results.get('models', {}).keys()) if 'models' in results else [],
+            'best_model': results.get('best_model', 'unknown'),
+            'training_set_size': None,
+            'test_set_size': None,
+            'execution_time': results.get('execution_time', 0)
+        }
+        
+        # Add data split information
+        if 'X_train' in results:
+            summary['training_set_size'] = len(results['X_train'])
+        if 'X_test' in results:
+            summary['test_set_size'] = len(results['X_test'])
+        
+        # Add model metrics
+        if 'metrics' in results:
+            summary['metrics'] = {}
+            for model, metrics in results['metrics'].items():
+                if isinstance(metrics, dict):
+                    # Only keep scalar metrics
+                    summary['metrics'][model] = {
+                        k: v for k, v in metrics.items() 
+                        if isinstance(v, (int, float, str, bool))
+                    }
+        
+        # Add feature importance summary
+        if 'feature_importance' in results:
+            summary['top_10_features'] = {}
+            for model, importance in results['feature_importance'].items():
+                if isinstance(importance, pd.DataFrame):
+                    top_features = importance.nlargest(10, 'importance')[['feature', 'importance']]
+                    summary['top_10_features'][model] = top_features.to_dict('records')
+                    
+    elif model_type == 'ensemble':
+        summary = {
+            'execution_time': results.get('execution_time', 0)
+        }
+        
+        # Add ensemble-specific metrics
+        if 'threshold' in results:
+            summary['threshold'] = float(results['threshold'])
+        if 'weights' in results:
+            summary['weights'] = results['weights']
+    
+    return summary

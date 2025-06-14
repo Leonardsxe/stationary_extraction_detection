@@ -1,12 +1,14 @@
 #!/usr/bin/env python
 """
-Main training pipeline for fuel theft detection.
+Main training pipeline for fuel theft detection with optimized results storage.
 """
 import argparse
 import sys
 from pathlib import Path
 from datetime import datetime
 from typing import Any, Dict, Optional
+import numpy as np
+import pandas as pd
 
 # Add project root to path
 project_root = Path(__file__).parent.parent
@@ -24,6 +26,53 @@ from src.utils.logger import setup_logging, get_logger
 from src.utils.helpers import save_dataframe, save_json, create_experiment_id
 
 logger = get_logger(__name__)
+
+
+def create_summary_dict(data: Any, max_items: int = 10) -> Any:
+    """
+    Create a summary version of data for JSON storage.
+    
+    Args:
+        data: Data to summarize
+        max_items: Maximum number of items to include in lists
+        
+    Returns:
+        Summarized version of data
+    """
+    if isinstance(data, pd.DataFrame):
+        return {
+            'shape': list(data.shape),
+            'columns': list(data.columns),
+            'dtypes': data.dtypes.astype(str).to_dict(),
+            'memory_usage_mb': data.memory_usage(deep=True).sum() / 1024**2,
+            'sample_rows': data.head(max_items).to_dict('records') if len(data) > 0 else []
+        }
+    elif isinstance(data, pd.Series):
+        return {
+            'length': len(data),
+            'dtype': str(data.dtype),
+            'unique_values': int(data.nunique()) if not data.empty else 0,
+            'sample_values': data.head(max_items).tolist() if len(data) > 0 else []
+        }
+    elif isinstance(data, np.ndarray):
+        return {
+            'shape': list(data.shape),
+            'dtype': str(data.dtype),
+            'size': data.size,
+            'sample_values': data.flatten()[:max_items].tolist() if data.size > 0 else []
+        }
+    elif isinstance(data, dict):
+        return {k: create_summary_dict(v, max_items) for k, v in data.items()}
+    elif isinstance(data, list):
+        if len(data) > max_items:
+            return {
+                'length': len(data),
+                'sample': [create_summary_dict(item, max_items) for item in data[:max_items]],
+                'truncated': True
+            }
+        return [create_summary_dict(item, max_items) for item in data]
+    else:
+        return data
 
 
 class FuelTheftPipeline:
@@ -57,9 +106,10 @@ class FuelTheftPipeline:
             data_path: Path to data directory. If None, uses config default
             
         Returns:
-            Dictionary with pipeline results
+            Dictionary with pipeline results (summarized for JSON storage)
         """
         results = {}
+        full_results = {}  # Store full results for processing but not for JSON
         
         # 1. Data Loading
         logger.info("=" * 60)
@@ -119,10 +169,12 @@ class FuelTheftPipeline:
         results['feature_info'] = {
             'total_features': len(feature_names),
             'feature_names': feature_names,
-            'feature_metadata': feature_builder.feature_metadata
+            'feature_groups': {
+                k: len(v) for k, v in feature_builder.feature_metadata.items()
+            } if hasattr(feature_builder, 'feature_metadata') else {}
         }
         
-        # Save featured data
+        # Save featured data and statistics
         save_dataframe(
             featured_data,
             self.experiment_dir / 'data' / 'featured.parquet'
@@ -139,8 +191,10 @@ class FuelTheftPipeline:
         
         unsupervised = UnsupervisedModel(self.config)
         unsupervised_results = unsupervised.fit_predict(model_features, featured_data)
+        full_results['unsupervised'] = unsupervised_results
         
-        results['unsupervised'] = unsupervised_results
+        # Create summary for JSON
+        results['unsupervised'] = self._summarize_unsupervised_results(unsupervised_results)
         
         # 5. Supervised Learning (if labels available)
         if 'Stationary_drain' in featured_data.columns:
@@ -154,8 +208,10 @@ class FuelTheftPipeline:
                 feature_names,
                 target='Stationary_drain'
             )
+            full_results['supervised'] = supervised_results
             
-            results['supervised'] = supervised_results
+            # Create summary for JSON
+            results['supervised'] = self._summarize_supervised_results(supervised_results)
             
             # Save trained models
             models_dir = self.experiment_dir / 'models'
@@ -170,11 +226,15 @@ class FuelTheftPipeline:
             ensemble = EnsembleModel(self.config)
             ensemble_results = ensemble.combine_predictions(
                 featured_data,
-                unsupervised_results,
-                supervised_results
+                full_results['unsupervised'],
+                full_results['supervised']
             )
             
-            results['ensemble'] = ensemble_results
+            # Create summary for JSON
+            results['ensemble'] = self._summarize_ensemble_results(
+                ensemble_results, 
+                featured_data
+            )
             
             # Save final predictions
             final_predictions = featured_data[['timestamp', 'Vehicle_ID', 'driver_name', 'location', 
@@ -192,19 +252,132 @@ class FuelTheftPipeline:
         
         report_gen = ReportGenerator(self.config)
         report_gen.generate_full_report(
-            results,
+            full_results,  # Use full results for report generation
             output_dir=self.experiment_dir / 'reports'
         )
         
-        # Save experiment results
+        # Add metadata to results
+        results['experiment_metadata'] = {
+            'experiment_id': self.experiment_id,
+            'timestamp': datetime.now().isoformat(),
+            'config': {
+                'test_size': self.config.model.test_size,
+                'random_state': self.config.model.random_state,
+                'resampling_method': self.config.model.resampling_method
+            },
+            'output_directory': str(self.experiment_dir)
+        }
+        
+        # Save summarized experiment results
         save_json(
             results,
             self.experiment_dir / 'experiment_results.json'
         )
         
+        # Save detailed results separately if needed
+        save_json(
+            {
+                'unsupervised_metrics': full_results.get('unsupervised', {}).get('metrics', {}),
+                'supervised_metrics': full_results.get('supervised', {}).get('metrics', {}),
+                'ensemble_metrics': full_results.get('ensemble', {}).get('metrics', {})
+            },
+            self.experiment_dir / 'detailed_metrics.json'
+        )
+        
         logger.info(f"\nExperiment complete! Results saved to: {self.experiment_dir}")
         
         return results
+    
+    def _summarize_unsupervised_results(self, results: Dict[str, Any]) -> Dict[str, Any]:
+        """Create summary of unsupervised results for JSON storage."""
+        summary = {
+            'models_used': list(results.get('models', {}).keys()) if 'models' in results else [],
+            'n_anomalies_detected': {},
+            'execution_time': results.get('execution_time', 0)
+        }
+        
+        # Summarize predictions
+        if 'predictions' in results:
+            for model, preds in results['predictions'].items():
+                if isinstance(preds, (pd.Series, np.ndarray)):
+                    n_anomalies = int((preds == -1).sum()) if hasattr(preds, 'sum') else 0
+                    summary['n_anomalies_detected'][model] = n_anomalies
+        
+        # Include metrics if available
+        if 'metrics' in results:
+            summary['metrics'] = results['metrics']
+        
+        return summary
+    
+    def _summarize_supervised_results(self, results: Dict[str, Any]) -> Dict[str, Any]:
+        """Create summary of supervised results for JSON storage."""
+        summary = {
+            'models_trained': list(results.get('models', {}).keys()) if 'models' in results else [],
+            'best_model': results.get('best_model', 'unknown'),
+            'training_set_size': None,
+            'test_set_size': None,
+            'execution_time': results.get('execution_time', 0)
+        }
+        
+        # Add data split information
+        if 'X_train' in results:
+            summary['training_set_size'] = len(results['X_train'])
+        if 'X_test' in results:
+            summary['test_set_size'] = len(results['X_test'])
+        
+        # Add model metrics
+        if 'metrics' in results:
+            summary['metrics'] = {}
+            for model, metrics in results['metrics'].items():
+                if isinstance(metrics, dict):
+                    # Only keep scalar metrics
+                    summary['metrics'][model] = {
+                        k: v for k, v in metrics.items() 
+                        if isinstance(v, (int, float, str, bool))
+                    }
+        
+        # Add feature importance summary
+        if 'feature_importance' in results:
+            summary['top_10_features'] = {}
+            for model, importance in results['feature_importance'].items():
+                if isinstance(importance, pd.DataFrame):
+                    top_features = importance.nlargest(10, 'importance')[['feature', 'importance']]
+                    summary['top_10_features'][model] = top_features.to_dict('records')
+        
+        return summary
+    
+    def _summarize_ensemble_results(self, results: Dict[str, Any], 
+                                   featured_data: pd.DataFrame) -> Dict[str, Any]:
+        """Create summary of ensemble results for JSON storage."""
+        summary = {
+            'total_records': len(featured_data),
+            'execution_time': results.get('execution_time', 0)
+        }
+        
+        # Calculate detection statistics
+        if 'Final_Prediction' in featured_data.columns:
+            summary['total_predictions'] = int((featured_data['Final_Prediction'] == 1).sum())
+            summary['detection_rate'] = float(summary['total_predictions'] / len(featured_data))
+        else:
+            summary['total_predictions'] = 0
+            summary['detection_rate'] = 0.0
+        
+        # Add score statistics
+        if 'Final_Score' in featured_data.columns:
+            scores = featured_data['Final_Score']
+            summary['score_statistics'] = {
+                'mean': float(scores.mean()),
+                'std': float(scores.std()),
+                'min': float(scores.min()),
+                'max': float(scores.max()),
+                'median': float(scores.median())
+            }
+        
+        # Add threshold information
+        if 'threshold' in results:
+            summary['threshold'] = float(results['threshold'])
+        
+        return summary
 
 
 def main():
